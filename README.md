@@ -5,6 +5,10 @@
 
 ---
 
+![Demo](ScreenRecording2026-02-27at14.39.19-ezgif.com-video-to-gif-converter.gif)
+
+---
+
 ## 📁 Project Overview
 
 This project contains a deployed AWS Bedrock Agent Core multi-agent system with a TypeScript Lambda proxy for API Gateway integration and a frontend web application.
