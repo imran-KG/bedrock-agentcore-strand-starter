@@ -1,0 +1,12 @@
+# Core dependencies for bedrock-agent-core
+strands-agents==1.24.0
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+
+# AWS dependencies (typically required for Bedrock)
+boto3>=1.34.0
+botocore>=1.34.0
+
+# Proxy server dependencies
+fastapi
+uvicorn[standard]

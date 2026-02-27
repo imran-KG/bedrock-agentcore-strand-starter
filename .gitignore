@@ -1,0 +1,31 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.env
+
+# Node
+lambda_node/node_modules/
+lambda_node/dist/
+lambda_node/*.js.map
+
+# Lambda deployment package
+lambda_deployment_node.zip
+
+# AWS / Bedrock
+.bedrock_agentcore.yaml
+
+# Bedrock Agent Core deployment metadata
+.bedrock_agentcore/
+
+# Claude local settings
+.claude/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
