@@ -1,222 +1,142 @@
-# Bedrock Agent Core - Project Structure
+# Bedrock AgentCore — Multi-Agent Orchestration System
 
-**Last Updated**: February 13, 2026
-**Status**: Production-Ready
+A production-deployed multi-agent AI system built on **AWS Bedrock AgentCore** and the **Strands** framework. Rather than routing everything through a single LLM call, this project splits complex tasks across four specialised agents — each owning one stage of the pipeline — making responses more reliable, failures easier to debug, and the overall system easier to extend.
+
+> Built in February 2026 on AgentCore and Strands, both newly released AWS services with minimal documentation at the time. Most patterns here were figured out from SDK source code and first-party AWS examples.
 
 ---
 
 ![Demo](ScreenRecording2026-02-27at14.39.19-ezgif.com-video-to-gif-converter.gif)
 
+*Chain-of-thought mode — watch each agent phase complete in real time via streaming responses.*
+
 ---
 
-## 📁 Project Overview
+## Why this exists
 
-This project contains a deployed AWS Bedrock Agent Core multi-agent system with a TypeScript Lambda proxy for API Gateway integration and a frontend web application.
+Single-agent LLM systems struggle with tasks that require planning, retrieval, analysis, and validation in sequence. Putting all of that into one agent produces inconsistent results and makes it hard to know where a failure occurred.
+
+This project explores a structured alternative: four agents, each with a single responsibility, executing in a defined order. The result is more predictable behaviour and a clear audit trail of what each stage produced.
+
+---
+
+## How it works
 
 ```
-bedrock-agent-core/
-├── 📄 IMPLEMENTATION.md              # Complete implementation documentation
-├── 📄 PROJECT_STRUCTURE.md           # This file - project organization
-├── 📄 .bedrock_agentcore.yaml        # Agent deployment configuration
-├── 📄 requirements.txt                # Python dependencies for agent
-├── 📄 multiagent_example.py          # Multi-agent implementation (deployed)
-│
-├── 📁 lambda_node/                    # TypeScript Lambda (PRODUCTION - DEPLOYED)
-│   ├── index.ts                       # Lambda handler source code
-│   ├── package.json                   # Node.js dependencies
-│   ├── tsconfig.json                  # TypeScript configuration
-│   ├── lambda_deployment_node.zip     # Deployment package (7.7MB)
-│   ├── dist/                          # Compiled JavaScript
-│   └── node_modules/                  # Dependencies (@aws-sdk/client-bedrock-agentcore)
-│
-├── 📁 static/                         # Frontend web application
-│   ├── index.html                     # Main UI
-│   ├── app.js                         # Frontend logic (connects to API Gateway)
-│   └── styles.css                     # Styling
-│
-├── 📁 venv/                           # Python virtual environment (for local agent development)
-│
-└── 📁 .bedrock_agentcore/             # Agent Core deployment metadata
-    └── ...                            # Build artifacts and deployment state
+Browser
+   │
+   ▼
+API Gateway  (REST — regional)
+   │
+   ▼
+Lambda Proxy  (TypeScript / Node.js 22.x)
+   │  SigV4 auth · SSE streaming · session management
+   ▼
+Bedrock AgentCore Runtime
+   │
+   ├── 1. Planner    — breaks the request into a structured execution plan
+   ├── 2. Retriever  — fetches relevant information based on the plan
+   ├── 3. Analyzer   — synthesises and processes retrieved information
+   └── 4. Validator  — checks output quality before returning to the user
+```
 
+Two workflow modes are supported:
+
+- **Chain-of-thought** — runs all four agents, shows intermediate steps as they stream in
+- **Quick-response** — skips intermediate phases, returns the final answer directly
+
+---
+
+## Architecture decisions
+
+**Why four agents instead of one?**
+Each agent has a single, well-defined job. If the output is wrong you can trace exactly which stage broke. Each agent can also be prompted and tuned independently without affecting the others. The Planner → Retriever → Analyzer → Validator pattern mirrors how a human expert approaches a complex research task.
+
+**Why AgentCore over standard Bedrock Agents?**
+Bedrock Agents use a ReAct loop — plan, act, observe, repeat — which adds latency and non-determinism. AgentCore gives direct control over the agent runtime and execution lifecycle, making it better suited to structured pipelines where you need predictable, sequential behaviour.
+
+**Why Strands?**
+Strands is AWS's open-source agent framework with first-party AgentCore support. At the time of building this it was the only framework that made AgentCore deployment straightforward, handling the containerisation, ECR push, and runtime registration that would otherwise require significant boilerplate.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Agent framework | Strands + AWS Bedrock AgentCore |
+| Lambda proxy | TypeScript, Node.js 22.x (arm64), AWS SDK v3 |
+| API layer | Amazon API Gateway — REST, Regional |
+| Frontend | Vanilla JS, HTML, CSS — SSE streaming |
+| Auth | AWS SigV4 via SDK |
+| Observability | CloudWatch Logs |
+
+---
+
+## Project structure
+
+```
+├── multiagent_example.py        # Core agent — Strands + AgentCore (deployed)
+├── requirements.txt             # Python dependencies
+├── .bedrock_agentcore.yaml      # AgentCore deployment config
+│
+├── lambda_node/
+│   ├── index.ts                 # Lambda handler — proxies to AgentCore, streams responses
+│   ├── package.json
+│   └── tsconfig.json
+│
+└── static/
+    ├── index.html               # Chat UI
+    ├── app.js                   # SSE parsing, workflow selection, streaming logic
+    └── styles.css
 ```
 
 ---
 
-## 🎯 Production Components
+## Getting started
 
-### 1. **Deployed Agent** (`multiagent_example.py`)
+### Prerequisites
 
-**Purpose**: Multi-agent orchestration system deployed to AWS Bedrock Agent Core
+- AWS account with Bedrock AgentCore access enabled
+- Python 3.11+ and Node.js 22+
+- AWS CLI configured with appropriate IAM permissions
+- AgentCore CLI: `pip install bedrock-agentcore`
 
-**Components**:
-- **Planner Agent**: Analyzes requests and plans workflow
-- **Retriever Agent**: Fetches relevant information
-- **Analyzer Agent**: Processes and analyzes data
-- **Validator Agent**: Validates results and ensures quality
+### 1. Set up Python environment
 
-**Deployment**:
-- **ARN**: `arn:aws:bedrock-agentcore:ap-northeast-1:YOUR_ACCOUNT_ID:runtime/YOUR_AGENT_ID`
-- **Region**: `ap-northeast-1`
-- **Runtime**: Containerized Python agent
-
----
-
-### 2. **Lambda Function** (`lambda_node/`)
-
-**Purpose**: Proxy between API Gateway and Bedrock Agent Core Runtime
-
-**Implementation**: TypeScript with AWS SDK v3
-- Package: `@aws-sdk/client-bedrock-agentcore`
-- Runtime: Node.js 22.x (arm64)
-- Handler: `index.handler`
-- Size: 7.7MB
-
-**Key Features**:
-- AWS SigV4 authentication (handled by SDK)
-- Streaming response collection
-- SSE format pass-through
-- CORS enabled
-- Session management (33+ character session IDs)
-
-**Deployed To**:
-- **Function**: `BedrockAgentCoreProxy`
-- **Region**: `ap-northeast-1`
-- **Timeout**: 300 seconds
-- **Memory**: 256 MB
-
----
-
-### 3. **API Gateway**
-
-**Purpose**: REST API endpoint for frontend access
-
-**Configuration**:
-- **API Name**: BedrockAgentCoreGateway
-- **API ID**: `YOUR_API_GW_ID`
-- **Type**: REST API (Regional)
-- **Endpoint**: `https://YOUR_API_GW_ID.execute-api.YOUR_REGION.amazonaws.com/prod/invocations`
-
-**Methods**:
-- `POST /invocations` → Lambda proxy integration
-- `OPTIONS /invocations` → CORS preflight
-
----
-
-### 4. **Frontend** (`static/`)
-
-**Purpose**: Web-based UI for interacting with the deployed agent
-
-**Files**:
-- `index.html` - Main UI with chat interface
-- `app.js` - JavaScript logic, SSE parsing, workflow selection
-- `styles.css` - UI styling
-
-**Configuration**:
-- API URL: Points to API Gateway endpoint
-- Supports two workflows:
-  - `chain-of-thought`: Multi-agent orchestration (4 phases)
-  - `quick-response`: Direct final response
-
-**Features**:
-- Real-time streaming responses
-- Agent phase visualization
-- Conversation history
-- Workflow selection
-
----
-
-## 🔧 Development Components
-
-### Python Virtual Environment (`venv/`)
-
-Used for local agent development and testing.
-
-**Activate**:
 ```bash
+git clone https://github.com/imran-KG/bedrock-agentcore-strand-starter
+cd bedrock-agentcore-strand-starter
+python -m venv venv
 source venv/bin/activate
-```
-
-**Install Dependencies**:
-```bash
 pip install -r requirements.txt
 ```
 
----
-
-## 📋 Configuration Files
-
-### `.bedrock_agentcore.yaml`
-
-Agent deployment configuration containing:
-- Agent names and entrypoints
-- AWS account and region settings
-- ECR repository URLs
-- IAM roles
-- Network configuration
-- Memory settings
-
-**Key Agents Defined**:
-1. `strand_multiagent` (older version)
-2. `multiagent_example` (current production agent)
-
-### `requirements.txt`
-
-Python dependencies for the agent:
-```
-strands>=0.0.85
-bedrock_agentcore>=0.0.4
-pydantic>=2.0.0
-```
-
----
-
-## 🚀 Deployment Commands
-
-### Deploy Agent (to Bedrock Agent Core)
+### 2. Deploy the agent
 
 ```bash
-# Activate venv
-source venv/bin/activate
-
-# Deploy agent
 agentcore deploy
 ```
 
-### Deploy Lambda (TypeScript)
+This builds a container image, pushes it to ECR, and registers the agent runtime. Note the agent ARN from the output.
+
+### 3. Deploy the Lambda proxy
 
 ```bash
 cd lambda_node
-
-# Build TypeScript
+npm install
 npm run build
-
-# Create deployment package
 rm -f lambda_deployment_node.zip
 cp -r node_modules dist/
 cd dist && zip -r ../lambda_deployment_node.zip .
 
-# Deploy to AWS
 aws lambda update-function-code \
   --function-name BedrockAgentCoreProxy \
   --zip-file fileb://lambda_deployment_node.zip \
   --region ap-northeast-1
 ```
 
----
-
-## 🧪 Testing
-
-### Test API Gateway Endpoint
-
-```bash
-curl -X POST https://YOUR_API_GW_ID.execute-api.YOUR_REGION.amazonaws.com/prod/invocations \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Hello", "workflow": "quick-response"}' \
-  --no-buffer
-```
-
-### Test Frontend Locally
+### 4. Run the frontend locally
 
 ```bash
 cd static
@@ -224,163 +144,67 @@ python3 -m http.server 8080
 # Open http://localhost:8080
 ```
 
-### View Lambda Logs
+Update the API URL in `app.js` to point to your API Gateway endpoint.
+
+### 5. Test the API directly
 
 ```bash
-aws logs tail /aws/lambda/BedrockAgentCoreProxy \
-  --since 10m \
-  --region ap-northeast-1 \
-  --format short
+curl -X POST https://<your-api-id>.execute-api.<region>.amazonaws.com/prod/invocations \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Hello", "workflow": "quick-response"}' \
+  --no-buffer
 ```
 
 ---
 
-## 📊 Architecture
+## Key implementation notes
 
-```
-┌─────────────┐
-│   Browser   │
-│  (Frontend) │
-└──────┬──────┘
-       │ HTTPS
-       ↓
-┌─────────────────────┐
-│   API Gateway       │  https://YOUR_API_GW_ID.execute-api...
-│  (REST API - prod)  │
-└──────┬──────────────┘
-       │ Lambda Proxy Integration
-       ↓
-┌─────────────────────┐
-│   Lambda Function   │  BedrockAgentCoreProxy
-│   (Node.js 22.x)    │  - Handles AWS authentication
-│   index.handler     │  - Streams responses
-└──────┬──────────────┘
-       │ AWS SDK (@aws-sdk/client-bedrock-agentcore)
-       ↓
-┌─────────────────────┐
-│ Bedrock Agent Core  │  arn:aws:bedrock-agentcore:...
-│   Runtime Service   │
-│                     │
-│  Multi-Agent Flow:  │
-│  1. Planner         │
-│  2. Retriever       │
-│  3. Analyzer        │
-│  4. Validator       │
-└─────────────────────┘
-```
+**Session management** — AgentCore requires session IDs of 33+ characters. Sessions preserve conversation context across multiple turns without any external state store.
+
+**Streaming** — the Lambda proxy collects SSE chunks from AgentCore and passes them through to the frontend incrementally. Lambda timeout is set to 300s to handle long multi-agent responses without cutting off mid-stream.
+
+**CORS** — API Gateway includes a preflight OPTIONS method so the static frontend can call the API directly from the browser without needing a separate backend server.
+
+**IAM** — the Lambda execution role has a minimal inline policy granting only `bedrock-agentcore:InvokeAgentRuntime`. No wildcard permissions.
 
 ---
 
-## 📝 Key Files Summary
+## What I learned
 
-| File | Purpose | Status |
-|------|---------|--------|
-| `multiagent_example.py` | Agent implementation | ✅ Deployed |
-| `lambda_node/index.ts` | Lambda proxy handler | ✅ Deployed |
-| `static/app.js` | Frontend application | ✅ Active |
-| `IMPLEMENTATION.md` | Full documentation | 📖 Reference |
-| `.bedrock_agentcore.yaml` | Agent config | ⚙️ Config |
-| `requirements.txt` | Python dependencies | 📦 Dev |
+- AgentCore is lower-level than standard Bedrock Agents — more control, but you manage the agent lifecycle explicitly. Worth it for structured pipelines, overkill for simple Q&A.
+- Strands was sparsely documented in early 2026. Most of the deployment patterns here came from reading the SDK source directly, not from official guides.
+- Multi-agent systems introduce coordination overhead. The 4-agent split pays off for complex tasks but adds unnecessary latency for simple ones — the quick-response mode exists for exactly this reason.
+- Streaming through Lambda requires careful SSE handling. The chunk format coming out of AgentCore differs slightly from standard SSE — the proxy needs to normalise it before the browser can parse it reliably.
+- AgentCore cold starts are longer than standard Lambda cold starts due to the container runtime. Session warmup matters in production.
 
 ---
 
-## 🔐 AWS Resources
+## What's next
 
-### Lambda Function
-- **Name**: BedrockAgentCoreProxy
-- **Runtime**: nodejs22.x
-- **Handler**: index.handler
-- **Role**: LambdaBedrockAgentCoreRole
-- **Region**: ap-northeast-1
-
-### IAM Role
-- **Name**: LambdaBedrockAgentCoreRole
-- **Permissions**:
-  - `AWSLambdaBasicExecutionRole` (CloudWatch Logs)
-  - `bedrock-agentcore:InvokeAgentRuntime` (inline policy)
-
-### API Gateway
-- **Name**: BedrockAgentCoreGateway
-- **ID**: YOUR_API_GW_ID
-- **Stage**: prod
-- **Type**: Regional REST API
-
-### Bedrock Agent Core
-- **Agent**: multiagent_example
-- **ID**: YOUR_AGENT_ID
-- **Runtime ARN**: arn:aws:bedrock-agentcore:ap-northeast-1:YOUR_ACCOUNT_ID:runtime/YOUR_AGENT_ID
+- [ ] Add a Bedrock Knowledge Base for domain-specific RAG — connect the Retriever agent to a private document store instead of relying on model knowledge
+- [ ] Add Bedrock Guardrails for content filtering and PII detection before responses reach the user
+- [ ] Add X-Ray tracing across Lambda and AgentCore for end-to-end latency visibility per agent stage
+- [ ] Explore replacing API Gateway + Lambda with Bedrock Flows for the orchestration layer — lower latency, less infrastructure
 
 ---
 
-## 💡 Development Workflow
+## Cost estimate
 
-### 1. Modify Agent Logic
-```bash
-# Edit multiagent_example.py
-vi multiagent_example.py
+Based on 1M requests/month:
 
-# Test locally (if supported)
-source venv/bin/activate
-python multiagent_example.py
+| Service | Cost |
+|---|---|
+| API Gateway | ~$4.40 |
+| Lambda | ~$6.87 |
+| Bedrock AgentCore | Variable — token-based |
+| **Total** | **~$11–15/month** |
 
-# Deploy to Bedrock Agent Core
-agentcore deploy
-```
-
-### 2. Modify Lambda
-```bash
-cd lambda_node
-
-# Edit TypeScript code
-vi index.ts
-
-# Build and deploy
-npm run build
-# ... (deployment commands above)
-```
-
-### 3. Modify Frontend
-```bash
-cd static
-
-# Edit frontend files
-vi app.js
-
-# No build step needed - just refresh browser
-```
+Within AWS Free Tier (first 12 months): ~$4.40/month
 
 ---
 
-## 🎓 Learning Resources
+## Resources
 
-- **IMPLEMENTATION.md**: Complete walkthrough of the implementation
-- **AWS Bedrock Agent Core Docs**: https://docs.aws.amazon.com/bedrock-agentcore/
-- **AWS SDK for JavaScript v3**: https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/
-
----
-
-## 📈 Cost Estimate
-
-**Monthly Cost** (based on 1M requests):
-- API Gateway: ~$4.40
-- Lambda: ~$6.87
-- Bedrock Agent Core: Variable (token-based)
-- **Total Infrastructure**: ~$11-15/month
-
-**With AWS Free Tier** (first 12 months):
-- Lambda: $0 (within free tier)
-- **Total**: ~$4.40/month
-
----
-
-## ✅ Production Checklist
-
-- ✅ Agent deployed to Bedrock Agent Core
-- ✅ Lambda function deployed and tested
-- ✅ API Gateway configured with CORS
-- ✅ Frontend connected to API Gateway
-- ✅ IAM permissions configured
-- ✅ Streaming responses working
-- ✅ Error handling implemented
-- ✅ CloudWatch logging enabled
-
+- [AWS Bedrock AgentCore docs](https://docs.aws.amazon.com/bedrock-agentcore/)
+- [Strands framework](https://github.com/strands-agents/sdk-python)
+- [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/)
